@@ -10,7 +10,7 @@ const swaggerOptions = {
     },
     servers: [
     {
-      url: "http://localhost:4002", 
+      url: "https://user-service-6c4h.onrender.com", 
       description: "club ai user server",
     },
     {
