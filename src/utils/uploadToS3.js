@@ -1,39 +1,33 @@
-const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
-const path = require("path");
+const cloudinary = require("cloudinary").v2;
 const crypto = require("crypto");
 const logger = require("../utils/logger");
 
-// Log env values ONCE (when file loads)
-logger.info("🔍 ENV CHECK for S3", {
-  AWS_REGION: process.env.AWS_REGION,
-  AWS_S3_BUCKET: process.env.AWS_S3_BUCKET,
-  ACCESS_KEY: process.env.AWS_ACCESS_KEY_ID ? "Loaded" : "Missing",
-  SECRET_KEY: process.env.AWS_SECRET_ACCESS_KEY ? "Loaded" : "Missing"
+// Log ENV values ONCE
+logger.info("🔍 ENV CHECK for Cloudinary", {
+  CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME,
+  CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY ? "Loaded" : "Missing",
+  CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET ? "Loaded" : "Missing"
+});
+// Validate ENV
+if (!process.env.CLOUDINARY_CLOUD_NAME) logger.error("❌ Missing CLOUDINARY_CLOUD_NAME");
+if (!process.env.CLOUDINARY_API_KEY) logger.error("❌ Missing CLOUDINARY_API_KEY");
+if (!process.env.CLOUDINARY_API_SECRET) logger.error("❌ Missing CLOUDINARY_API_SECRET");
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// VALIDATE ENV VARS
-if (!process.env.AWS_REGION) logger.error("❌ Missing AWS_REGION");
-if (!process.env.AWS_S3_BUCKET) logger.error("❌ Missing AWS_S3_BUCKET");
-if (!process.env.AWS_ACCESS_KEY_ID) logger.error("❌ Missing AWS_ACCESS_KEY_ID");
-if (!process.env.AWS_SECRET_ACCESS_KEY) logger.error("❌ Missing AWS_SECRET_ACCESS_KEY");
-
-// Initialize S3 (with fallback region)
-const s3 = new S3Client({
-  region: process.env.AWS_REGION || "eu-north-1",  // fallback
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-  },
-});
-
-
+// 🔥 SAME FUNCTION NAME (as requested)
 async function uploadToS3(file) {
   try {
-    logger.info("📤 Starting S3 upload process...");
+    logger.info("📤 Starting Cloudinary upload process...");
 
     if (!file) {
       logger.warn("⚠️ uploadToS3 called but NO FILE was received!");
-      throw new Error("No file received for S3 upload");
+      throw new Error("No file received for upload");
     }
 
     logger.info("📁 File details", {
@@ -42,46 +36,37 @@ async function uploadToS3(file) {
       size: file.size
     });
 
-    // Generate unique file key
-    const fileExt = path.extname(file.originalname);
-    const randomName = crypto.randomBytes(16).toString("hex") + fileExt;
+    // Generate unique public ID
+    const randomName = crypto.randomBytes(16).toString("hex");
 
-    if (!process.env.AWS_S3_BUCKET) {
-      logger.error("❌ S3 bucket is missing in ENV");
-      throw new Error("AWS S3 Bucket is missing in ENV");
-    }
+    // Upload using buffer (stream)
+    const uploadResult = await new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "uploads",
+          public_id: randomName,
+          resource_type: "auto" // auto detect image/video/file
+        },
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        }
+      );
 
-    const uploadParams = {
-      Bucket: process.env.AWS_S3_BUCKET,
-      Key: randomName,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-    };
-
-    logger.info("📦 Uploading to S3", {
-      bucket: process.env.AWS_S3_BUCKET,
-      key: randomName
+      stream.end(file.buffer);
     });
 
-    await s3.send(new PutObjectCommand(uploadParams));
+    logger.info("✅ File uploaded to Cloudinary successfully", {
+      url: uploadResult.secure_url
+    });
 
-    logger.info("✅ File uploaded to S3 successfully");
-
-    // CloudFront URL
-    if (process.env.CLOUDFRONT_URL) {
-      const url = `${process.env.CLOUDFRONT_URL}/${randomName}`;
-      logger.info(`🌐 CloudFront URL: ${url}`);
-      return url;
-    }
-
-    // Default S3 URL
-    const s3Url = `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com/${randomName}`;
-    logger.info(`🌐 S3 URL: ${s3Url}`);
-
-    return s3Url;
+    return uploadResult.secure_url;
 
   } catch (err) {
-    logger.error("❌ S3 Upload Error", {
+    logger.error("❌ Cloudinary Upload Error", {
       message: err.message,
       stack: err.stack
     });

@@ -5,7 +5,7 @@ const logger = require("../utils/logger");
 const userResponse = require("../response/UserResponse");
 const userRepo = require("../repositories/UserRepository");
 const axios = require("axios");
-const uploadToS3 = require("../utils/uploadToS3");
+const uploadToS3 = require("../utils/uploadToS32");
 
 // 🔹 Update Profile
 exports.updateProfile = async (req, res) => {
